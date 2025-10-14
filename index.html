@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AI Lesson Plan Generator — BAE Rubric Aligned</title>
+  <title>AI Lesson Plan Generator — BAE StanEval Hybrid</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -25,13 +25,13 @@
       box-shadow: 0 4px 20px rgba(0,0,0,0.1);
       padding: 30px;
       width: 100%;
-      max-width: 700px;
+      max-width: 720px;
       text-align: center;
     }
     input, textarea, select {
       width: 100%;
       padding: 10px;
-      margin: 10px 0;
+      margin: 8px 0;
       border-radius: 8px;
       border: 1px solid #ccc;
       font-size: 15px;
@@ -50,11 +50,10 @@
       border-radius: 10px;
       font-size: 16px;
       cursor: pointer;
-      margin-top: 10px;
+      margin-top: 15px;
+      width: 100%;
     }
-    button:hover {
-      background-color: #005bb5;
-    }
+    button:hover { background-color: #005bb5; }
     #output {
       margin-top: 30px;
       text-align: left;
@@ -65,78 +64,142 @@
       overflow-y: auto;
       max-height: 600px;
     }
+    .rating-buttons {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      margin-top: 5px;
+    }
+    .rating {
+      flex: 1;
+      padding: 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: 0.2s;
+    }
+    .rating.good { background-color: #dceeff; }
+    .rating.outstanding { background-color: #e8ffe0; }
+    .rating.selected { border-color: #0071e3; font-weight: bold; }
+    small { color: #666; font-style: italic; }
   </style>
 </head>
 <body>
   <h1>AI Lesson Plan Generator</h1>
   <div class="card">
-    <p>Upload your teaching material (PDF, Word, Excel, or Image), fill the required fields, and generate a complete <strong>BAE Rubric-Aligned</strong> lesson plan.</p>
+    <p>Upload your lesson material (PDF, Word, Excel, or Image) and fill in the form below.  
+    The AI will generate a complete <strong>BAE Rubric-Aligned Lesson Plan</strong> with Supporting Details, ready for formal observation.</p>
 
     <form id="lessonForm">
-      <label for="teacher_name">Teacher Name</label>
-      <input type="text" id="teacher_name" name="teacher_name" required placeholder="Enter your name" />
+      <h3>Section A — Lesson Information</h3>
+      <label>Teacher Name</label>
+      <input type="text" name="teacher_name" required placeholder="Enter your name" />
 
-      <label for="lesson_number">Lesson Number / Title</label>
-      <input type="text" id="lesson_number" name="lesson_number" required placeholder="e.g., Lesson 4 – Past Simple" />
+      <label>Lesson Number / Title</label>
+      <input type="text" name="lesson_number" required placeholder="e.g., Lesson 4 – Comparatives" />
 
-      <label for="lesson_duration">Lesson Duration</label>
-      <input type="text" id="lesson_duration" name="lesson_duration" placeholder="e.g., 45 minutes" />
+      <label>Lesson Duration</label>
+      <input type="text" name="lesson_duration" placeholder="e.g., 45 minutes" />
 
-      <label for="learner_profile">Learner Profile</label>
-      <textarea id="learner_profile" name="learner_profile" rows="3" placeholder="e.g., Level 2 cadets, mixed ability, visual learners..."></textarea>
+      <label>CEFR Level</label>
+      <select name="cefr_level">
+        <option value="">Select Level</option>
+        <option>A1</option><option>A2</option><option>B1</option>
+        <option>B2</option><option>C1</option>
+      </select>
 
-      <label for="anticipated_problems">Anticipated Problems</label>
-      <textarea id="anticipated_problems" name="anticipated_problems" rows="3" placeholder="e.g., Low participation, pronunciation of /θ/ and /ð/, slow writing speed..."></textarea>
+      <label>Lesson Type</label>
+      <select name="lesson_type">
+        <option value="">Select Type</option>
+        <option>Grammar</option><option>Vocabulary</option>
+        <option>Reading</option><option>Listening</option>
+        <option>Speaking</option><option>Writing</option>
+        <option>Integrated Skills</option>
+      </select>
 
-      <label>Target Rating</label>
-      <div style="display: flex; gap: 20px; justify-content: center; margin-bottom: 10px;">
-        <label><input type="radio" name="target_rating" value="Good" checked /> Good</label>
-        <label><input type="radio" name="target_rating" value="Outstanding" /> Outstanding</label>
+      <label>Learner Profile</label>
+      <textarea name="learner_profile" rows="3" placeholder="e.g., Level 2 cadets, mixed ability, visual learners..."></textarea>
+
+      <label>Anticipated Problems</label>
+      <textarea name="anticipated_problems" rows="3" placeholder="e.g., Low participation, pronunciation issues, timing..."></textarea>
+
+      <h3>Section B — Target Rating</h3>
+      <div class="rating-buttons">
+        <div class="rating good selected" onclick="setRating('Good')">
+          Good<br><small>Structured & Clear Delivery</small>
+        </div>
+        <div class="rating outstanding" onclick="setRating('Outstanding')">
+          Outstanding<br><small>Creative & Learner-Centred</small>
+        </div>
+      </div>
+      <input type="hidden" name="target_rating" id="target_rating" value="Good" />
+
+      <h3>Section C — Upload Material</h3>
+      <label>Upload File</label>
+      <input type="file" name="file" accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg" required />
+
+      <div style="text-align:left; margin-top:10px;">
+        <input type="checkbox" id="previewMode" /> 
+        <label for="previewMode" style="display:inline;">Preview before download</label>
       </div>
 
-      <label for="file">Upload Lesson Material</label>
-      <input type="file" id="file" name="file" accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg" required />
-
-      <button type="button" onclick="uploadFile()">Generate Lesson Plan</button>
+      <button type="button" id="generateBtn" onclick="uploadFile()">Generate Lesson Plan</button>
     </form>
 
     <div id="output"></div>
   </div>
 
   <script>
+    function setRating(level) {
+      document.getElementById('target_rating').value = level;
+      document.querySelectorAll('.rating').forEach(e => e.classList.remove('selected'));
+      document.querySelector(level === 'Good' ? '.good' : '.outstanding').classList.add('selected');
+    }
+
     async function uploadFile() {
       const form = document.getElementById('lessonForm');
       const output = document.getElementById('output');
+      const button = document.getElementById('generateBtn');
+      const preview = document.getElementById('previewMode').checked;
       const formData = new FormData(form);
 
-      const fileInput = document.getElementById('file');
+      const fileInput = form.querySelector('[name="file"]');
       if (!fileInput.files.length) {
-        output.innerHTML = "<p style='color:red'>Please select a file.</p>";
+        output.innerHTML = "<p style='color:red'>Please upload a file first.</p>";
         return;
       }
 
+      button.disabled = true;
+      button.innerText = "Generating...";
       output.innerHTML = "<p>⏳ Generating your lesson plan, please wait...</p>";
 
       try {
-        const response = await fetch("https://lesson-planner-9gmh.onrender.com/generate", {
-          method: "POST",
-          body: formData
-        });
+        const endpoint = preview
+          ? "https://lesson-planner-9gmh.onrender.com/preview"
+          : "https://lesson-planner-9gmh.onrender.com/generate";
 
+        const response = await fetch(endpoint, { method: "POST", body: formData });
         if (!response.ok) throw new Error(`Server responded with ${response.status}`);
 
-        // if the backend returns a DOCX file, trigger download
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "AI_Lesson_Plan.docx";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        output.innerHTML = "<p style='color:green'>✅ Lesson plan generated and downloaded successfully!</p>";
+        if (preview) {
+          const text = await response.text();
+          output.innerHTML = `<h3>Preview</h3><pre>${text}</pre>`;
+        } else {
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "AI_Lesson_Plan.docx";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          output.innerHTML = "<p style='color:green'>✅ Lesson plan downloaded successfully!</p>";
+        }
       } catch (err) {
         output.innerHTML = `<p style='color:red'>Server error: ${err.message}</p>`;
+      } finally {
+        button.disabled = false;
+        button.innerText = "Generate Lesson Plan";
       }
     }
   </script>
