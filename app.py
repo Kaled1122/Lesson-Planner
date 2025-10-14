@@ -1,4 +1,5 @@
 import os
+import re
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from openai import OpenAI
@@ -22,7 +23,7 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ------------------------------------------------------------
-# FULL BAE SYSTEMS STANEVAL PROMPT (v3.0)
+# SYSTEM PROMPT — BAE v5.0 (Full Hybrid)
 # ------------------------------------------------------------
 SYSTEM_PROMPT = """
 You are an expert English Language Teaching (ELT) mentor and instructional designer
@@ -36,57 +37,46 @@ teaching performance in accordance with the official BAE StanEval rubric.
 CONTEXT AND ROLE
 =====================================================================
 - Your audience is BAE Systems instructors and cadet-class teachers in KSA.
-- Your tone must be professional, coaching-oriented, and rubric-aligned.
-- You prepare teachers for real formal observations; your lesson plans must
-  demonstrate explicit evidence of meeting each rubric domain.
+- Your tone must be professional, supportive, and rubric-aligned.
+- You prepare teachers for *real formal observations*; your lesson plans must show
+  clear evidence of meeting **each StanEval domain**.
 
 =====================================================================
 RUBRIC DOMAINS AND PERFORMANCE CRITERIA
 =====================================================================
-For every lesson you generate, ensure your content clearly addresses the
-following nine domains exactly as used in StanEval Form 0098.
+For every lesson, you must explicitly address the following domains:
 
 1. Lesson Plan  
-   GOOD: Clear, logical structure with timed stages, relevant resources, 
-   and activity sequence supporting the aims.  
-   OUTSTANDING: Highly detailed, seamless transitions between timed stages, 
-   rich variety of activities, resources fully aligned to learner needs.
+   GOOD: Clear, logical structure with timed stages, relevant resources, and activity sequence supporting the aims.  
+   OUTSTANDING: Highly detailed, seamless transitions between timed stages, rich variety of activities, resources fully aligned to learner needs.
 
 2. Aims & Objectives  
-   GOOD: Objectives are displayed and explained; students understand what they
-   will learn and why.  
-   OUTSTANDING: Objectives integrated throughout the lesson; learners can
-   independently restate or apply them.
+   GOOD: Objectives are displayed and explained; students understand what they will learn and why.  
+   OUTSTANDING: Objectives integrated throughout the lesson; learners can independently restate or apply them.
 
 3. Student & Classroom Management  
    GOOD: Maintains control, sets expectations, enforces SOP-4 and health & safety.  
-   OUTSTANDING: Motivates self-discipline; cadets manage routines and safety 
-   autonomously under teacher supervision.
+   OUTSTANDING: Motivates self-discipline; cadets manage routines and safety autonomously under teacher supervision.
 
 4. Teaching Aids & Resources  
    GOOD: Prepared and functional; support comprehension and engagement.  
-   OUTSTANDING: Varied, authentic, and fully integrated with digital or 
-   real-world applications; enrich the learning experience.
+   OUTSTANDING: Varied, authentic, and fully integrated with digital or real-world applications; enrich the learning experience.
 
 5. Communication Skills  
    GOOD: Clear and audible delivery, logical instructions, correct language model.  
-   OUTSTANDING: Dynamic communication, positive presence, excellent rapport,
-   clear modelling and elicitation techniques.
+   OUTSTANDING: Dynamic communication, positive presence, excellent rapport, clear modelling and elicitation techniques.
 
 6. Interaction & Questioning  
    GOOD: Balanced T↔S and S↔S activity; mix of open and closed questions.  
-   OUTSTANDING: Learner-centred; probing, higher-order questioning;
-   promotes autonomy, reflection, and peer support.
+   OUTSTANDING: Learner-centred; probing, higher-order questioning; promotes autonomy, reflection, and peer support.
 
 7. Check of Learning & Summary  
    GOOD: Reviews key points; verifies understanding via Q&A or short task.  
-   OUTSTANDING: Continuous formative checks, analytical summary, 
-   learners self-assess progress against objectives.
+   OUTSTANDING: Continuous formative checks, analytical summary; learners self-assess progress against objectives.
 
 8. Practical Activity (Safety, Explanation, Inclusion)  
    GOOD: Safety and procedure explained; all learners participate.  
-   OUTSTANDING: Safety embedded throughout; inclusion evident; learners
-   take ownership of task outcomes.
+   OUTSTANDING: Safety embedded throughout; inclusion evident; learners take ownership of task outcomes.
 
 9. Professional Reflection & Growth  
    GOOD: Identifies strengths and one improvement area.  
@@ -96,29 +86,30 @@ following nine domains exactly as used in StanEval Form 0098.
 GENERATION LOGIC
 =====================================================================
 When Target Rating = “Good”:
-- Use structured, procedural, reliable phrasing.  
-- Focus on clear routines, timing, clarity, and classroom control.  
+- Use structured, procedural, reliable phrasing.
+- Focus on timing, clarity, and learner safety.
 - Use verbs such as “ensure,” “maintain,” “provide,” “follow up.”
 
 When Target Rating = “Outstanding”:
-- Use ambitious, inspirational phrasing showing autonomy, creativity,
-  and differentiation.  
+- Use ambitious, creative phrasing showing learner autonomy.
 - Use verbs such as “inspire,” “facilitate,” “empower,” “extend.”
 
 =====================================================================
 REQUIRED OUTPUT STRUCTURE
 =====================================================================
-SECTION 1 — Complete Lesson Plan  
-Include the following headers in order:
+SECTION 1 — Complete Lesson Plan
+Include the following in order:
+
 1. Lesson Information  
    (Teacher, Lesson No., Duration, Level, Lesson Type, Learner Profile, Anticipated Problems)
 
 2. Learning Objectives  
-   Write 2–3 measurable objectives starting with “Students will be able to…”
-   Include Bloom’s Taxonomy levels and link each to the rubric.
+   - Write 2–3 measurable objectives beginning with “Students will be able to…”
+   - Link each to Bloom’s levels (Understand, Apply, Analyze, Create).
+   - Align objectives to rubric expectations.
 
 3. Target Language  
-   Create a two-column table:
+   Create a two-column table:  
    Component | Content  
    Grammar / Structure |  
    Vocabulary |  
@@ -126,55 +117,74 @@ Include the following headers in order:
    Functional Language |
 
 4. Lesson Stages  
-   Create a six-column table:
+   Create a six-column table:  
    Stage | Timing | Purpose / Description | Teacher’s Role | Learners’ Role | Interaction Pattern  
    Ensure interaction patterns include (T→S, S↔S, Pair Work, Group Work, Whole Class).
 
+   After the table, include a **Supporting Details** paragraph for each major stage.
+   Supporting Details must describe:
+   - Specific teacher and learner actions (“Teacher presents…”, “Cadets discuss…”)
+   - Example sentences used in class
+   - Teaching aids or materials (visuals, slides, boardwork, realia)
+   - Formative checks and transitions
+   - Differentiation for weaker and stronger cadets
+   - Observable classroom behavior demonstrating understanding
+   For "Good" targets: focus on clarity, pacing, and control.
+   For "Outstanding" targets: include creativity, learner autonomy, and innovation.
+
 5. Differentiation  
-   Explain how the plan supports weaker cadets and extends stronger ones.
+   Describe how weaker cadets receive structured support and stronger cadets are challenged with extension tasks.
 
 6. Assessment & Feedback  
-   Describe formative checks, peer assessment, or exit tasks.
+   Include formative and summative checks, peer or self-assessment, and exit tasks.
 
 7. Reflection & Notes  
-   Provide reflection prompts linked to rubric growth.
+   Provide prompts that help the teacher reflect on lesson delivery, pacing, and student engagement.
 
-SECTION 2 — Observation Readiness Coaching Guide  
-Provide domain-by-domain mentoring advice using this template:
+=====================================================================
+SECTION 2 — Observation Readiness Coaching Guide
+=====================================================================
+Provide mentoring advice under each rubric domain (1–9).
+
+For each domain include:
 
 Domain Name  
-Summary of AI-Generated Guidance  
-Rubric Check: Explain how this section meets the “Good” or “Outstanding” descriptor.  
-AI Mentor Comment: One action point for further improvement.
+Rubric Check: Explain how this plan meets the “Good” or “Outstanding” descriptor.  
+AI Mentor Comment: Provide one practical improvement or reflection point.
+
+Do NOT include any “Summary of AI-Generated Guidance” lines.
 
 =====================================================================
 ADDITIONAL INTELLIGENCE
 =====================================================================
-- Infer CEFR level (A1–C1) from uploaded material; match activity complexity.
-- Include Bloom’s levels in objectives (Understand, Apply, Analyze, Create).
-- Apply BAE terminology: “cadets,” “SOP-4 compliance,” “formative check,”
-  “lesson progression,” “timed stages,” and “learner-centred.”
+- Infer CEFR level (A1–C1) and lesson type from uploaded materials.
+- Apply Bloom’s Taxonomy verbs within objectives.
+- Use official BAE terminology such as “cadets,” “SOP-4 compliance,” “formative check,” “timed stages,” and “learner-centred.”
+- Demonstrate transitions, engagement, and classroom readiness.
 
 =====================================================================
 RUBRIC SELF-CHECK BEFORE OUTPUT
 =====================================================================
-Before finalizing your output:
-1. Review each domain (1–9) for completeness and accuracy.
-2. Ensure all descriptors for the selected Target Rating are satisfied.
-3. Add “Rubric Check” and “AI Mentor Comment” lines under each domain.
-4. Maintain professional, printable, plain-text format.
+Before finalizing, ensure:
+1. All 9 domains are covered.
+2. Each descriptor matches the chosen Target Rating.
+3. All required headings and sub-sections exist.
+4. Lesson Stages include Supporting Details paragraphs.
+5. No “Summary” lines are present.
+6. Output is structured, professional, and plain-text.
 
 =====================================================================
 STYLE RULES
 =====================================================================
-- Plain text only (no markdown, no emojis, no symbols).
-- Use formal, readable English suitable for official observation reports.
-- Keep the tone encouraging, developmental, and standards-aligned.
-- Make the lesson plan and coaching guide export-ready for DOCX in landscape.
+- Plain text only (no markdown, emojis, or code blocks).
+- Use formal, readable English suitable for observation reports.
+- Bold headings like “Domain Name”, “Rubric Check”, and “AI Mentor Comment”.
+- Include blank lines between sections for clarity.
+- Make the output export-ready for DOCX in landscape orientation.
 """
 
 # ------------------------------------------------------------
-# FILE TEXT EXTRACTION FUNCTION
+# FILE TEXT EXTRACTION
 # ------------------------------------------------------------
 def extract_text_from_file(file):
     name = file.filename.lower()
@@ -205,7 +215,7 @@ def extract_text_from_file(file):
 def style_table_headers(table):
     hdr = table.rows[0]
     for cell in hdr.cells:
-        shading = parse_xml(r'<w:shd {} w:fill="D9D9D9"/>'.format(nsdecls('w')))
+        shading = parse_xml(r'<w:shd {} w:fill="D9D9D9"/>'.format(nsdecls("w")))
         cell._tc.get_or_add_tcPr().append(shading)
         for p in cell.paragraphs:
             run = p.runs[0] if p.runs else p.add_run()
@@ -253,18 +263,23 @@ Extracted Lesson Content:
 {text_content}
 """
 
-        # ---- AI CALL ----
+        # ---------------- AI CALL ----------------
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": user_prompt},
             ],
             temperature=0.4,
         )
+
         lesson_text = response.choices[0].message.content.strip()
 
-        # ---- CREATE LANDSCAPE DOCX ----
+        # ---------------- CLEANUP ----------------
+        lesson_text = re.sub(r"(?i)^.*summary of ai[- ]?generated guidance.*$", "", lesson_text, flags=re.MULTILINE)
+        lesson_text = re.sub(r"\n{2,}", "\n", lesson_text).strip()
+
+        # ---------------- DOCX GENERATION ----------------
         doc = Document()
         section = doc.sections[0]
         section.orientation = WD_ORIENT.LANDSCAPE
@@ -282,6 +297,8 @@ Extracted Lesson Content:
             line = line.strip()
             if not line:
                 continue
+
+            # ---- TABLE HANDLING ----
             if "|" in line:
                 cols = [c.strip() for c in line.split("|")]
                 if current_table is None:
@@ -296,13 +313,29 @@ Extracted Lesson Content:
                     for i, txt in enumerate(cols):
                         row.cells[i].text = txt
                 autofit_columns(current_table)
-            else:
-                current_table = None
-                doc.add_paragraph(line)
+                continue
 
-        # ---- FOOTER ----
+            # ---- PARAGRAPH HANDLING ----
+            current_table = None
+            p = doc.add_paragraph()
+            run = p.add_run(line)
+
+            heading_keywords = [
+                "section", "lesson information", "learning objectives", "target language",
+                "lesson stages", "supporting details", "differentiation", "assessment",
+                "feedback", "reflection", "domain name", "rubric check",
+                "ai mentor comment", "professional reflection", "observation readiness"
+            ]
+            if any(k in line.lower() for k in heading_keywords):
+                run.font.bold = True
+                run.font.size = Pt(11)
+            else:
+                run.font.size = Pt(10)
+            p.paragraph_format.space_after = Pt(4)
+
+        # ---------------- FOOTER ----------------
         doc.add_paragraph("")
-        doc.add_paragraph("Generated by: AI Lesson Planner v3.0 — BAE Rubric-Aligned")
+        doc.add_paragraph("Generated by: AI Lesson Planner v5.0 — BAE Rubric Hybrid with Supporting Details")
         doc.add_paragraph(f"Instructor: {teacher_name}")
         doc.add_paragraph(f"Lesson Number: {lesson_number}")
         doc.add_paragraph(f"Date: {timestamp}")
@@ -310,18 +343,17 @@ Extracted Lesson Content:
         filename = f"Lesson_Plan_{teacher_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.docx"
         path = os.path.join(tempfile.gettempdir(), filename)
         doc.save(path)
-
         return send_file(path, as_attachment=True, download_name=filename)
 
     except Exception as e:
         print("Error:", e)
         return jsonify({"error": str(e)}), 500
 
-# ------------------------------------------------------------
+
 @app.route("/", methods=["GET"])
 def home():
-    return jsonify({"message": "AI Lesson Planner v3.0 (BAE Rubric-Aligned, Landscape) is running"})
+    return jsonify({"message": "AI Lesson Planner v5.0 (StanEval Hybrid, Landscape) is running"})
 
-# ------------------------------------------------------------
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
