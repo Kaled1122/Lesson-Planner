@@ -11,29 +11,24 @@ from PIL import Image
 import pytesseract
 import tempfile
 from datetime import datetime
+import re
 
+# ------------------------------------------------------------
+# APP SETUP
+# ------------------------------------------------------------
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# --------------------------------------------------------------------
-# SYSTEM PROMPT (plain text, includes Interaction Pattern)
-# --------------------------------------------------------------------
+# ------------------------------------------------------------
+# SYSTEM PROMPT
+# ------------------------------------------------------------
 SYSTEM_PROMPT = """
-You are an expert English Language Teaching (ELT) planner and mentor.
-Generate a complete English lesson plan and a professional coaching guide
-to prepare the teacher for observation. Use plain text only, no markdown or emojis.
+You are an expert English Language Teaching (ELT) mentor.
+Generate a complete English lesson plan and coaching guide in plain text.
+Each section must begin with clear headers exactly as listed below.
 
-Input you will receive:
-- Teacher Name
-- Lesson Number
-- Lesson Duration
-- Learner Profile
-- Anticipated Problems
-- Target Rating (Good or Outstanding)
-- Extracted lesson content from uploaded file
-
-Include the following sections in your structured response:
+Required structure:
 1. Lesson Information
 2. Learning Objectives
 3. Target Language
@@ -42,19 +37,17 @@ Include the following sections in your structured response:
 6. Assessment and Feedback
 7. Reflection and Notes
 8. Observation Readiness Coaching Guide
-9. Metadata
 
-For Lesson Stages, include an Interaction Pattern column showing
-communication type at each stage (for example: T→S, S↔S, Pair Work, Group Work, Whole Class).
+For Lesson Stages, use six subcolumns:
+Stage | Timing | Purpose / Description | Teacher’s Role | Learners’ Role | Interaction Pattern
 
-Maintain professional, supportive tone.
-No scoring or evaluation language.
-Keep all text clear and printable.
+Avoid markdown, symbols, or emojis.
+Keep everything clear and printable.
 """
 
-# --------------------------------------------------------------------
+# ------------------------------------------------------------
 # TEXT EXTRACTION FUNCTION
-# --------------------------------------------------------------------
+# ------------------------------------------------------------
 def extract_text_from_file(file):
     name = file.filename.lower()
     text = ""
@@ -78,9 +71,9 @@ def extract_text_from_file(file):
         text = file.read().decode("utf-8", errors="ignore")
     return text.strip()
 
-# --------------------------------------------------------------------
+# ------------------------------------------------------------
 # MAIN ROUTE
-# --------------------------------------------------------------------
+# ------------------------------------------------------------
 @app.route("/generate", methods=["POST"])
 def generate_lesson_plan():
     try:
@@ -118,13 +111,15 @@ Extracted Lesson Content:
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
+                {"role": "user", "content": user_prompt}
             ],
             temperature=0.4,
         )
-        lesson_plan_text = response.choices[0].message.content.strip()
+        plan_text = response.choices[0].message.content.strip()
 
-        # ---- CREATE LANDSCAPE DOCX ----
+        # ------------------------------------------------------------
+        # CREATE LANDSCAPE DOCX
+        # ------------------------------------------------------------
         doc = Document()
         section = doc.sections[0]
         section.orientation = WD_ORIENT.LANDSCAPE
@@ -137,22 +132,38 @@ Extracted Lesson Content:
         doc.add_paragraph(f"Target Level: {target_rating}")
         doc.add_paragraph("")
 
-        # --- LESSON INFORMATION ---
+        # ------------------------------------------------------------
+        # PARSE AI OUTPUT BY HEADERS
+        # ------------------------------------------------------------
+        sections = re.split(r"\n(?=\d\.)", plan_text)
+        content = { "Lesson Information": "", "Learning Objectives": "",
+                    "Target Language": "", "Lesson Stages": "",
+                    "Differentiation": "", "Assessment and Feedback": "",
+                    "Reflection and Notes": "", "Observation Readiness Coaching Guide": "" }
+
+        for block in sections:
+            for key in content.keys():
+                if key.lower() in block.lower():
+                    content[key] = block.strip()
+                    break
+
+        # ------------------------------------------------------------
+        # LESSON INFO
+        # ------------------------------------------------------------
         doc.add_heading("Lesson Information", level=1)
-        doc.add_paragraph(f"Teacher: {teacher_name}")
-        doc.add_paragraph(f"Lesson Number: {lesson_number}")
-        doc.add_paragraph(f"Duration: {lesson_duration}")
-        doc.add_paragraph(f"Learner Profile: {learner_profile}")
-        doc.add_paragraph(f"Anticipated Problems: {anticipated_problems}")
+        doc.add_paragraph(content["Lesson Information"] or "(AI section)")
         doc.add_paragraph("")
 
-        # --- LEARNING OBJECTIVES ---
+        # ------------------------------------------------------------
+        # OBJECTIVES
+        # ------------------------------------------------------------
         doc.add_heading("Learning Objectives", level=1)
-        doc.add_paragraph("Students will be able to:")
-        doc.add_paragraph("(AI will suggest 2–3 objectives here.)")
+        doc.add_paragraph(content["Learning Objectives"] or "(AI section)")
         doc.add_paragraph("")
 
-        # --- TARGET LANGUAGE TABLE ---
+        # ------------------------------------------------------------
+        # TARGET LANGUAGE TABLE
+        # ------------------------------------------------------------
         doc.add_heading("Target Language", level=1)
         table1 = doc.add_table(rows=5, cols=2)
         table1.style = "Table Grid"
@@ -162,20 +173,16 @@ Extracted Lesson Content:
         components = ["Grammar / Structure", "Vocabulary", "Pronunciation Focus", "Functional Language"]
         for j, comp in enumerate(components, start=1):
             table1.rows[j].cells[0].text = comp
+            table1.rows[j].cells[1].text = "(AI generated content)"
         doc.add_paragraph("")
 
-        # --- LESSON STAGES TABLE (6 columns, includes Interaction Pattern) ---
+        # ------------------------------------------------------------
+        # LESSON STAGES TABLE
+        # ------------------------------------------------------------
         doc.add_heading("Lesson Stages", level=1)
         table2 = doc.add_table(rows=7, cols=6)
         table2.style = "Table Grid"
-        headers = [
-            "Stage",
-            "Timing",
-            "Purpose / Description",
-            "Teacher’s Role",
-            "Learners’ Role",
-            "Interaction Pattern",
-        ]
+        headers = ["Stage", "Timing", "Purpose / Description", "Teacher’s Role", "Learners’ Role", "Interaction Pattern"]
         for i, hdr in enumerate(headers):
             table2.rows[0].cells[i].text = hdr
         stages = [
@@ -188,61 +195,52 @@ Extracted Lesson Content:
         ]
         for j, stage in enumerate(stages, start=1):
             table2.rows[j].cells[0].text = stage
-        for row in table2.rows:
-            for cell in row.cells:
-                cell.width = Cm(4)
+            table2.rows[j].cells[1].text = ""
+            table2.rows[j].cells[2].text = "(AI description)"
+            table2.rows[j].cells[3].text = "(AI teacher role)"
+            table2.rows[j].cells[4].text = "(AI learner role)"
+            table2.rows[j].cells[5].text = "(AI pattern)"
         doc.add_paragraph("")
 
-        # --- DIFFERENTIATION / FEEDBACK / REFLECTION ---
-        doc.add_heading("Differentiation", level=1)
-        doc.add_paragraph("Include one idea for supporting or challenging mixed-ability learners.")
-        doc.add_paragraph("")
+        # ------------------------------------------------------------
+        # DIFFERENTIATION / FEEDBACK / REFLECTION
+        # ------------------------------------------------------------
+        for section_name in ["Differentiation", "Assessment and Feedback", "Reflection and Notes"]:
+            doc.add_heading(section_name, level=1)
+            doc.add_paragraph(content[section_name] or "(AI section)")
+            doc.add_paragraph("")
 
-        doc.add_heading("Assessment and Feedback", level=1)
-        doc.add_paragraph("Describe practical methods to check learning (oral Q&A, peer check, exit ticket, etc.).")
-        doc.add_paragraph("")
-
-        doc.add_heading("Reflection and Notes", level=1)
-        doc.add_paragraph("Add 1–2 reflection prompts for the teacher to consider after the lesson.")
-        doc.add_paragraph("")
-
-        # --- OBSERVATION COACHING GUIDE ---
+        # ------------------------------------------------------------
+        # COACHING GUIDE
+        # ------------------------------------------------------------
         doc.add_heading("Observation Readiness Coaching Guide", level=1)
-        guide_text = (
-            "Provide mentoring guidance to help the teacher prepare for the chosen rating level.\n"
-            "Cover the following domains:\n"
-            "1. Lesson Plan Quality\n"
-            "2. Aims and Objectives\n"
-            "3. Classroom Management\n"
-            "4. Teaching Aids and Resources\n"
-            "5. Communication Skills\n"
-            "6. Interaction and Questioning\n"
-            "7. Learning Check and Summary\n"
-            "8. Professional Presence\n"
-        )
-        doc.add_paragraph(guide_text)
+        doc.add_paragraph(content["Observation Readiness Coaching Guide"] or "(AI section)")
         doc.add_paragraph("")
 
-        # --- METADATA ---
+        # ------------------------------------------------------------
+        # METADATA
+        # ------------------------------------------------------------
         doc.add_heading("Metadata", level=1)
         doc.add_paragraph("Generated by: AI Lesson Planner v1.0")
         doc.add_paragraph(f"Target Readiness Level: {target_rating}")
+        doc.add_paragraph(f"Teacher: {teacher_name}")
+        doc.add_paragraph(f"Lesson Number: {lesson_number}")
         doc.add_paragraph(f"Date: {timestamp}")
 
+        # SAVE AND RETURN FILE
         filename = f"Lesson_Plan_{teacher_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.docx"
         file_path = os.path.join(tempfile.gettempdir(), filename)
         doc.save(file_path)
-
         return send_file(file_path, as_attachment=True, download_name=filename)
 
     except Exception as e:
         print("Error:", e)
         return jsonify({"error": str(e)}), 500
 
-# --------------------------------------------------------------------
+# ------------------------------------------------------------
 @app.route("/", methods=["GET"])
 def home():
-    return jsonify({"message": "AI Lesson Planner (Landscape) is running"})
-# --------------------------------------------------------------------
+    return jsonify({"message": "AI Lesson Planner (Landscape Mode) is running"})
+# ------------------------------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
