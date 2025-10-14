@@ -4,50 +4,133 @@ from flask_cors import CORS
 from openai import OpenAI
 from PyPDF2 import PdfReader
 from docx import Document
-from docx.shared import Inches, Cm
+from docx.shared import Inches
 from docx.enum.section import WD_ORIENT
 from openpyxl import load_workbook
 from PIL import Image
 import pytesseract
 import tempfile
 from datetime import datetime
-import re
 
-# ------------------------------------------------------------
+# --------------------------------------------------------------------
 # APP SETUP
-# ------------------------------------------------------------
+# --------------------------------------------------------------------
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# ------------------------------------------------------------
-# SYSTEM PROMPT
-# ------------------------------------------------------------
+# --------------------------------------------------------------------
+# RUBRIC-AWARE SYSTEM PROMPT
+# --------------------------------------------------------------------
 SYSTEM_PROMPT = """
-You are an expert English Language Teaching (ELT) mentor.
-Generate a complete English lesson plan and coaching guide in plain text.
-Each section must begin with clear headers exactly as listed below.
+You are an expert English Language Teaching (ELT) mentor and lesson designer.
+Your role is to help teachers produce complete, professional lesson plans that
+prepare them for classroom observation according to the official rubric below.
 
-Required structure:
-1. Lesson Information
-2. Learning Objectives
-3. Target Language
-4. Lesson Stages
-5. Differentiation
-6. Assessment and Feedback
-7. Reflection and Notes
-8. Observation Readiness Coaching Guide
+Do not evaluate the teacher.
+Instead, generate a full, AI-filled lesson plan and a professional coaching guide
+that aligns with the selected performance level: “Good” or “Outstanding.”
 
-For Lesson Stages, use six subcolumns:
+=====================================================================
+RUBRIC REFERENCE: Teaching Observation Standards
+=====================================================================
+When producing your response, ensure that ALL of the following areas
+are represented with the quality level that matches the selected Target Rating.
+
+1. Lesson Plan  
+   - GOOD: Clear, structured plan identifying resources and timing.  
+   - OUTSTANDING: Highly detailed with timed stages, varied activities, 
+     and resources that clearly meet learner needs.
+
+2. Aims & Objectives  
+   - GOOD: Objectives shared with learners at the start or during lesson; 
+     clear learning purpose.  
+   - OUTSTANDING: Comprehensive introduction; learners can explain the
+     lesson purpose themselves.
+
+3. Student & Classroom Management  
+   - GOOD: Enforces clear routines; maintains order; positive relationship.  
+   - OUTSTANDING: Inspires motivation; handles behaviour proactively; 
+     fully compliant with procedures and professional tone.
+
+4. Teaching Aids & Resources  
+   - GOOD: Well-prepared resources supporting understanding.  
+   - OUTSTANDING: Variety of aids fully integrated into delivery and
+     continuous improvement.
+
+5. Communication Skills  
+   - GOOD: Clear voice, effective verbal/non-verbal communication, maintains interest.  
+   - OUTSTANDING: Engaging, confident delivery using strong expression,
+     sustained motivation, and excellent rapport.
+
+6. Variety & Effectiveness of Interaction  
+   - GOOD: Pair and group work planned; mostly effective interactions.  
+   - OUTSTANDING: Dynamic, learner-centred activity; teacher facilitates,
+     learners lead discussion and tasks.
+
+7. Question & Answer Techniques  
+   - GOOD: Mix of open and closed questions; checks understanding.  
+   - OUTSTANDING: Range of higher-order questioning; probing, reflective,
+     encouraging reasoning and autonomy.
+
+8. Check of Learning & Summary  
+   - GOOD: Reviews key points and confirms understanding at end.  
+   - OUTSTANDING: Continuous checks; analytical summary linked to aims;
+     learners self-assess progress.
+
+9. Practical Activity (Safety, Explanation, Inclusion)  
+   - GOOD: Clear safety brief, logical task explanation, learners engaged.  
+   - OUTSTANDING: Comprehensive safety intro, strong learner ownership,
+     inclusive engagement for all cadets.
+
+=====================================================================
+APPLICATION LOGIC
+=====================================================================
+When the teacher selects "Good":
+- Write with a structured, procedural tone.
+- Focus on clarity, pacing, and consistent learner engagement.
+
+When the teacher selects "Outstanding":
+- Write with an inspiring, developmental tone.
+- Include evidence of differentiation, motivation, creativity, and learner autonomy.
+
+=====================================================================
+OUTPUT STRUCTURE
+=====================================================================
+SECTION 1 — Complete Lesson Plan  
+Include:  
+Lesson Information, Learning Objectives, Target Language, Lesson Stages, 
+Differentiation, Assessment and Feedback, Reflection and Notes.
+
+Lesson Stages Table must include:  
 Stage | Timing | Purpose / Description | Teacher’s Role | Learners’ Role | Interaction Pattern
 
-Avoid markdown, symbols, or emojis.
-Keep everything clear and printable.
+SECTION 2 — Observation Readiness Coaching Guide  
+Provide practical mentoring advice under these domains:
+Lesson Plan Quality, Aims & Objectives, Classroom Management,
+Teaching Aids & Resources, Communication Skills, Interaction & Questioning,
+Learning Check & Summary, Professional Presence.
+
+=====================================================================
+RUBRIC SELF-CHECK BEFORE OUTPUT
+=====================================================================
+Before finalizing your output:
+1. Review your generated content against all rubric categories above.
+2. Ensure that each area includes language and detail appropriate to the
+   selected Target Rating.
+3. Revise wording where necessary to make the plan fully compliant with
+   rubric expectations.
+4. Then produce the final, plain-text lesson plan and coaching guide.
+=====================================================================
+STYLE RULES
+- Plain text only (no markdown, no symbols, no emojis).
+- Use professional, supportive language.
+- Make the output printable, editable, and observation-ready.
 """
 
-# ------------------------------------------------------------
+# --------------------------------------------------------------------
 # TEXT EXTRACTION FUNCTION
-# ------------------------------------------------------------
+# --------------------------------------------------------------------
 def extract_text_from_file(file):
     name = file.filename.lower()
     text = ""
@@ -71,9 +154,9 @@ def extract_text_from_file(file):
         text = file.read().decode("utf-8", errors="ignore")
     return text.strip()
 
-# ------------------------------------------------------------
+# --------------------------------------------------------------------
 # MAIN ROUTE
-# ------------------------------------------------------------
+# --------------------------------------------------------------------
 @app.route("/generate", methods=["POST"])
 def generate_lesson_plan():
     try:
@@ -115,11 +198,12 @@ Extracted Lesson Content:
             ],
             temperature=0.4,
         )
-        plan_text = response.choices[0].message.content.strip()
 
-        # ------------------------------------------------------------
-        # CREATE LANDSCAPE DOCX
-        # ------------------------------------------------------------
+        lesson_plan_text = response.choices[0].message.content.strip()
+
+        # --------------------------------------------------------------------
+        # CREATE LANDSCAPE DOCX WITH AI OUTPUT ONLY
+        # --------------------------------------------------------------------
         doc = Document()
         section = doc.sections[0]
         section.orientation = WD_ORIENT.LANDSCAPE
@@ -132,102 +216,32 @@ Extracted Lesson Content:
         doc.add_paragraph(f"Target Level: {target_rating}")
         doc.add_paragraph("")
 
-        # ------------------------------------------------------------
-        # PARSE AI OUTPUT BY HEADERS
-        # ------------------------------------------------------------
-        sections = re.split(r"\n(?=\d\.)", plan_text)
-        content = { "Lesson Information": "", "Learning Objectives": "",
-                    "Target Language": "", "Lesson Stages": "",
-                    "Differentiation": "", "Assessment and Feedback": "",
-                    "Reflection and Notes": "", "Observation Readiness Coaching Guide": "" }
+        # Write AI text directly, line by line
+        for line in lesson_plan_text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            # Create simple table if AI used "|" separators
+            if "|" in line:
+                columns = [c.strip() for c in line.split("|")]
+                if not hasattr(doc, "_current_table"):
+                    doc._current_table = doc.add_table(rows=1, cols=len(columns))
+                    doc._current_table.style = "Table Grid"
+                    row = doc._current_table.rows[0]
+                    for i, cell_text in enumerate(columns):
+                        row.cells[i].text = cell_text
+                else:
+                    row = doc._current_table.add_row()
+                    for i, cell_text in enumerate(columns):
+                        row.cells[i].text = cell_text
+            else:
+                if hasattr(doc, "_current_table"):
+                    delattr(doc, "_current_table")
+                doc.add_paragraph(line)
 
-        for block in sections:
-            for key in content.keys():
-                if key.lower() in block.lower():
-                    content[key] = block.strip()
-                    break
-
-        # ------------------------------------------------------------
-        # LESSON INFO
-        # ------------------------------------------------------------
-        doc.add_heading("Lesson Information", level=1)
-        doc.add_paragraph(content["Lesson Information"] or "(AI section)")
-        doc.add_paragraph("")
-
-        # ------------------------------------------------------------
-        # OBJECTIVES
-        # ------------------------------------------------------------
-        doc.add_heading("Learning Objectives", level=1)
-        doc.add_paragraph(content["Learning Objectives"] or "(AI section)")
-        doc.add_paragraph("")
-
-        # ------------------------------------------------------------
-        # TARGET LANGUAGE TABLE
-        # ------------------------------------------------------------
-        doc.add_heading("Target Language", level=1)
-        table1 = doc.add_table(rows=5, cols=2)
-        table1.style = "Table Grid"
-        headers = ["Component", "Content"]
-        for i, hdr in enumerate(headers):
-            table1.rows[0].cells[i].text = hdr
-        components = ["Grammar / Structure", "Vocabulary", "Pronunciation Focus", "Functional Language"]
-        for j, comp in enumerate(components, start=1):
-            table1.rows[j].cells[0].text = comp
-            table1.rows[j].cells[1].text = "(AI generated content)"
-        doc.add_paragraph("")
-
-        # ------------------------------------------------------------
-        # LESSON STAGES TABLE
-        # ------------------------------------------------------------
-        doc.add_heading("Lesson Stages", level=1)
-        table2 = doc.add_table(rows=7, cols=6)
-        table2.style = "Table Grid"
-        headers = ["Stage", "Timing", "Purpose / Description", "Teacher’s Role", "Learners’ Role", "Interaction Pattern"]
-        for i, hdr in enumerate(headers):
-            table2.rows[0].cells[i].text = hdr
-        stages = [
-            "Warm-up / Lead-in",
-            "Presentation",
-            "Practice (Controlled)",
-            "Production (Freer)",
-            "Assessment / Wrap-up",
-            "Extension / Homework",
-        ]
-        for j, stage in enumerate(stages, start=1):
-            table2.rows[j].cells[0].text = stage
-            table2.rows[j].cells[1].text = ""
-            table2.rows[j].cells[2].text = "(AI description)"
-            table2.rows[j].cells[3].text = "(AI teacher role)"
-            table2.rows[j].cells[4].text = "(AI learner role)"
-            table2.rows[j].cells[5].text = "(AI pattern)"
-        doc.add_paragraph("")
-
-        # ------------------------------------------------------------
-        # DIFFERENTIATION / FEEDBACK / REFLECTION
-        # ------------------------------------------------------------
-        for section_name in ["Differentiation", "Assessment and Feedback", "Reflection and Notes"]:
-            doc.add_heading(section_name, level=1)
-            doc.add_paragraph(content[section_name] or "(AI section)")
-            doc.add_paragraph("")
-
-        # ------------------------------------------------------------
-        # COACHING GUIDE
-        # ------------------------------------------------------------
-        doc.add_heading("Observation Readiness Coaching Guide", level=1)
-        doc.add_paragraph(content["Observation Readiness Coaching Guide"] or "(AI section)")
-        doc.add_paragraph("")
-
-        # ------------------------------------------------------------
-        # METADATA
-        # ------------------------------------------------------------
-        doc.add_heading("Metadata", level=1)
-        doc.add_paragraph("Generated by: AI Lesson Planner v1.0")
-        doc.add_paragraph(f"Target Readiness Level: {target_rating}")
-        doc.add_paragraph(f"Teacher: {teacher_name}")
-        doc.add_paragraph(f"Lesson Number: {lesson_number}")
-        doc.add_paragraph(f"Date: {timestamp}")
-
-        # SAVE AND RETURN FILE
+        # --------------------------------------------------------------------
+        # SAVE FILE
+        # --------------------------------------------------------------------
         filename = f"Lesson_Plan_{teacher_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.docx"
         file_path = os.path.join(tempfile.gettempdir(), filename)
         doc.save(file_path)
@@ -237,10 +251,10 @@ Extracted Lesson Content:
         print("Error:", e)
         return jsonify({"error": str(e)}), 500
 
-# ------------------------------------------------------------
+# --------------------------------------------------------------------
 @app.route("/", methods=["GET"])
 def home():
-    return jsonify({"message": "AI Lesson Planner (Landscape Mode) is running"})
-# ------------------------------------------------------------
+    return jsonify({"message": "AI Lesson Planner (Rubric-Aware, Landscape) is running"})
+# --------------------------------------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
