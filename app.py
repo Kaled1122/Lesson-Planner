@@ -331,9 +331,9 @@ Extracted Lesson Content:
         inside_section2 = False
 
         for line in lesson_text.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
+    line = line.strip()
+    if not line:
+        continue
 
             if "SECTION 2" in line.upper() and not inside_section2:
                 doc.add_page_break()
@@ -443,6 +443,7 @@ Extracted Lesson Content:
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
 
