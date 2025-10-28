@@ -4,5 +4,6 @@ openai
 PyPDF2
 python-docx
 openpyxl
-pillow
+Pillow
 pytesseract
+gunicorn
