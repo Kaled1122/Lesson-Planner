@@ -19,15 +19,22 @@ from datetime import datetime
 # APP SETUP
 # ------------------------------------------------------------
 app = Flask(__name__)
+
+# ✅ Enable CORS for all routes and origins
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+
 @app.after_request
 def after_request(response):
-    response.headers.add("Access-Control-Allow-Origin", "*")
-    response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
-    response.headers.add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+    # ✅ Explicitly allow CORS for browsers that ignore wildcard credentials
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
 
-CORS(app, resources={r"/*": {"origins": ["*"]}}, supports_credentials=True)
+# ✅ Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 
 # ------------------------------------------------------------
 # SYSTEM PROMPT — BAE v5.0 (Full Hybrid)
@@ -364,5 +371,6 @@ def home():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
