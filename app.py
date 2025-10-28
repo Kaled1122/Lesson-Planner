@@ -13,45 +13,31 @@ from docx.shared import RGBColor
 import tempfile
 from datetime import datetime
 
-
 app = Flask(__name__)
-
-# ✅ Enable CORS globally
 CORS(app, supports_credentials=True)
 
 @app.after_request
 def after_request(response):
-    """Ensure every response includes proper CORS headers."""
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
 
-
-# ✅ Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# ------------------------------------------------------------
-# BASIC ROUTES
-# ------------------------------------------------------------
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"message": "Lesson Planner API is running"}), 200
 
-# ✅ Handle preflight (CORS) for /generate route
 @app.route("/generate", methods=["OPTIONS"])
 def generate_options():
-    """Handle CORS preflight for the /generate route."""
     response = jsonify({"ok": True})
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return response, 200
 
-# ------------------------------------------------------------
-# SYSTEM PROMPT — EXACT TEXT WITH NO ASTERISKS
-# ------------------------------------------------------------
 SYSTEM_PROMPT = """
 You are an expert English Language Teaching (ELT) mentor and instructional designer
 operating within the BAE Systems KSA Training Standards (StanEval Form 0098).
@@ -184,7 +170,7 @@ Do NOT include any Summary of AI-Generated Guidance lines.
 =====================================================================
 ADDITIONAL INTELLIGENCE
 =====================================================================
-- Infer CEFR level A1–C1 and lesson type from uploaded materials.
+- Infer CEFR level A1–C2 and lesson type from uploaded materials.
 - Apply Bloom’s Taxonomy verbs within objectives.
 - Use official BAE terminology such as cadets, SOP-4 compliance, formative check, timed stages, and learner-centred.
 - Demonstrate transitions, engagement, and classroom readiness.
@@ -211,9 +197,6 @@ STYLE RULES
 - Make the output export-ready for DOCX in landscape orientation.
 """
 
-# ------------------------------------------------------------
-# FILE TEXT EXTRACTION (PDF ONLY)
-# ------------------------------------------------------------
 def extract_text_from_file(file):
     name = file.filename.lower()
     if not name.endswith(".pdf"):
@@ -222,9 +205,6 @@ def extract_text_from_file(file):
     text = "\n".join([(page.extract_text() or "") for page in reader.pages])
     return text.strip()
 
-# ------------------------------------------------------------
-# STYLE UTILITIES
-# ------------------------------------------------------------
 def style_table_headers(table):
     hdr = table.rows[0]
     for cell in hdr.cells:
@@ -240,9 +220,36 @@ def autofit_columns(table, cm_width=3.5):
         for cell in row.cells:
             cell.width = Cm(cm_width)
 
-# ------------------------------------------------------------
-# MAIN ROUTE
-# ------------------------------------------------------------
+_HEADING_RE = re.compile(
+    r'^\s*('
+    r'lesson information|learning objectives|target language|lesson stages|supporting details|'
+    r'differentiation|assessment\s*&\s*feedback|reflection\s*&\s*notes'
+    r')\s*:?\s*(.*)$',
+    re.IGNORECASE
+)
+
+def try_write_heading_and_body(doc, line: str) -> bool:
+    m = _HEADING_RE.match(line)
+    if not m:
+        return False
+    heading = m.group(1)
+    rest = (m.group(2) or "").strip()
+    p = doc.add_paragraph(heading)
+    run = p.runs[0]
+    run.bold = True
+    run.font.size = Pt(12)
+    p.paragraph_format.space_before = Pt(8)
+    p.paragraph_format.space_after = Pt(6)
+    if rest:
+        p2 = doc.add_paragraph(rest)
+        p2.paragraph_format.line_spacing = 1.15
+        p2.paragraph_format.space_after = Pt(4)
+    return True
+
+# Bulletizer for Supporting Details block
+# Treat each subsequent non-empty line that contains "Title: body" as a bullet item.
+_SUPPORTING_TITLE_RE = re.compile(r'^\s*([^:]{2,}):\s*(.+)\s*$')
+
 @app.route("/generate", methods=["POST"])
 def generate_lesson_plan():
     try:
@@ -276,7 +283,6 @@ Extracted Lesson Content:
 {text_content}
 """
 
-        # ---------------- AI CALL ----------------
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -287,16 +293,10 @@ Extracted Lesson Content:
         )
 
         lesson_text = response.choices[0].message.content.strip()
-
-        # ---------------- CLEANUP ----------------
-        # Remove any accidental "summary" lines
         lesson_text = re.sub(r"(?i)^.*summary of ai[- ]?generated guidance.*$", "", lesson_text, flags=re.MULTILINE)
-        # Collapse excess newlines
         lesson_text = re.sub(r"\n{2,}", "\n", lesson_text).strip()
-        # STRICT RULE: strip ALL asterisks from the model output
         lesson_text = lesson_text.replace("*", "")
 
-        # ---------------- DOCX GENERATION ----------------
         doc = Document()
         section = doc.sections[0]
         section.orientation = WD_ORIENT.LANDSCAPE
@@ -318,19 +318,24 @@ Extracted Lesson Content:
         current_table = None
         current_table_cols = 0
         inside_section2 = False
+        in_supporting_block = False  # NEW: bullet-mode for Supporting Details
 
         lines = lesson_text.split("\n")
         i = 0
         while i < len(lines):
-            line = lines[i].strip()
+            raw = lines[i]
             i += 1
+            line = (raw or "").strip()
             if not line:
+                # Blank lines end bullet mode
+                in_supporting_block = False
                 continue
 
-            # Page break when SECTION 2 starts
+            # SECTION 2 page break
             if "SECTION 2" in line.upper() and not inside_section2:
                 current_table = None
                 current_table_cols = 0
+                in_supporting_block = False
                 doc.add_page_break()
                 inside_section2 = True
                 continue
@@ -339,6 +344,7 @@ Extracted Lesson Content:
             if re.match(r"^section\s+\d+", line, re.I):
                 current_table = None
                 current_table_cols = 0
+                in_supporting_block = False
                 p = doc.add_paragraph(line.upper())
                 run = p.runs[0]
                 run.bold = True
@@ -346,11 +352,11 @@ Extracted Lesson Content:
                 run.font.color.rgb = RGBColor(255, 255, 255)
                 shading = parse_xml(r'<w:shd {} w:fill="003366"/>'.format(nsdecls("w")))
                 p._p.get_or_add_pPr().append(shading)
-                p.alignment = 1  # center
+                p.alignment = 1
                 doc.add_paragraph()
                 continue
 
-            # Domain blocks (Section 2) — robust label/value capture
+            # Domain blocks (fixed 3x2)
             if line.lower().startswith("domain name"):
                 current_table = doc.add_table(rows=3, cols=2)
                 current_table_cols = 2
@@ -358,65 +364,54 @@ Extracted Lesson Content:
                 for column in current_table.columns:
                     for cell in column.cells:
                         cell.width = Inches(3.5)
-
-                # Left labels
-                current_table.rows[0].cells[0].text = "Domain Name"
-                current_table.rows[1].cells[0].text = "Rubric Check"
-                current_table.rows[2].cells[0].text = "AI Mentor Comment"
-                for r in range(3):
-                    lbl_run = current_table.rows[r].cells[0].paragraphs[0].runs[0]
-                    lbl_run.bold = True
-                    current_table.rows[r].cells[0]._tc.get_or_add_tcPr().append(
+                labels = ["Domain Name", "Rubric Check", "AI Mentor Comment"]
+                for r, label in enumerate(labels):
+                    cell = current_table.rows[r].cells[0]
+                    cell.text = label
+                    cell.paragraphs[0].runs[0].bold = True
+                    cell._tc.get_or_add_tcPr().append(
                         parse_xml(r'<w:shd {} w:fill="D9D9D9"/>'.format(nsdecls("w")))
                     )
-
-                # Helper to read value after a label (same line after ':' or next non-empty line)
-                def read_value_from_line_or_next(current_line, expected_prefix):
-                    val = re.sub(rf"^{expected_prefix}[:]*", "", current_line, flags=re.I).strip()
+                def read_value_after(prefix_line, prefix_regex):
+                    val = re.sub(prefix_regex, "", prefix_line, flags=re.I).strip()
                     if val:
                         return val
                     nonlocal i
-                    while i < len(lines) and not lines[i].strip():
+                    while i < len(lines) and not (lines[i] or "").strip():
                         i += 1
                     if i < len(lines):
-                        v = lines[i].strip()
+                        v = (lines[i] or "").strip()
                         i += 1
                         return v
                     return ""
-
-                # Domain Name value
-                domain_val = read_value_from_line_or_next(line, "domain name")
-                current_table.rows[0].cells[1].text = domain_val
-
-                # Rubric Check value
-                rubric_val = ""
+                dn_val = read_value_after(line, r"^domain name[:]*")
+                current_table.rows[0].cells[1].text = dn_val
+                rc_val = ""
                 if i < len(lines):
-                    peek = lines[i].strip()
+                    peek = (lines[i] or "").strip()
                     if peek.lower().startswith("rubric check"):
                         i += 1
-                        rubric_val = read_value_from_line_or_next(peek, "rubric check")
+                        rc_val = read_value_after(peek, r"^rubric check[:]*")
                     else:
-                        rubric_val = peek
+                        rc_val = peek
                         i += 1
-                current_table.rows[1].cells[1].text = rubric_val
-
-                # AI Mentor Comment value
-                mentor_val = ""
+                current_table.rows[1].cells[1].text = rc_val
+                amc_val = ""
                 if i < len(lines):
-                    peek = lines[i].strip()
+                    peek = (lines[i] or "").strip()
                     if peek.lower().startswith("ai mentor comment"):
                         i += 1
-                        mentor_val = read_value_from_line_or_next(peek, "ai mentor comment")
+                        amc_val = read_value_after(peek, r"^ai mentor comment[:]*")
                     else:
-                        mentor_val = peek
+                        amc_val = peek
                         i += 1
-                current_table.rows[2].cells[1].text = mentor_val
-
+                current_table.rows[2].cells[1].text = amc_val
                 current_table = None
                 current_table_cols = 0
+                in_supporting_block = False
                 continue
 
-            # Table rows (pipe-separated)
+            # Pipe-tables
             if "|" in line:
                 cols = [c.strip() for c in line.split("|")]
                 if current_table is None:
@@ -441,38 +436,53 @@ Extracted Lesson Content:
                     row = current_table.add_row()
                     for j, text in enumerate(cols):
                         row.cells[j].text = text
+                in_supporting_block = False
                 continue
 
-            # Normal headings (explicit keywords)
-            if any(k in line.lower() for k in [
-                "lesson information", "learning objectives", "lesson stages", "supporting details",
-                "differentiation", "assessment", "reflection & notes"
-            ]):
+            # Headings with possible inline body (also toggles bullet-mode if "Supporting Details")
+            if try_write_heading_and_body(doc, line):
                 current_table = None
                 current_table_cols = 0
-                p = doc.add_paragraph(line)
-                run = p.runs[0]
-                run.bold = True
-                run.font.size = Pt(12)
-                p.paragraph_format.space_before = Pt(8)
-                p.paragraph_format.space_after = Pt(6)
+                # Enter bullet mode for Supporting Details
+                if line.lower().startswith("supporting details"):
+                    in_supporting_block = True
+                else:
+                    in_supporting_block = False
                 continue
 
-            # Default paragraph (no inline asterisks allowed; already stripped)
+            # Bullet items inside Supporting Details: "Title: body"
+            if in_supporting_block:
+                m = _SUPPORTING_TITLE_RE.match(line)
+                if m:
+                    title = m.group(1).strip()
+                    body = m.group(2).strip()
+                    # Bullet line: Title — body
+                    bullet_p = doc.add_paragraph(style="List Bullet")
+                    r1 = bullet_p.add_run(f"{title} — ")
+                    r1.bold = True
+                    bullet_p.add_run(body)
+                    continue
+                else:
+                    # Any non-matching line ends bullet mode but still add it as normal text
+                    in_supporting_block = False
+                    p = doc.add_paragraph(line)
+                    p.paragraph_format.line_spacing = 1.15
+                    p.paragraph_format.space_after = Pt(4)
+                    continue
+
+            # Default paragraph
             current_table = None
             current_table_cols = 0
             p = doc.add_paragraph(line)
             p.paragraph_format.line_spacing = 1.15
             p.paragraph_format.space_after = Pt(4)
 
-        # Footer
         footer = doc.sections[0].footer
         footer_para = footer.paragraphs[0]
         footer_para.text = "AI Lesson Planner — BAE StanEval Hybrid | © 2025 Kaled Alenezi"
         footer_para.alignment = 1
         footer_para.runs[0].font.size = Pt(8)
 
-        # Save and return
         output = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
         doc.save(output.name)
         output.seek(0)
@@ -482,7 +492,5 @@ Extracted Lesson Content:
         print("❌ ERROR in /generate:", e)
         return jsonify({"error": str(e)}), 500
 
-
 if __name__ == "__main__":
-    # If deploying on Railway/Gunicorn, this block is ignored (Gunicorn imports the app)
     app.run(host="0.0.0.0", port=5000)
