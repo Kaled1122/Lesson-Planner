@@ -53,7 +53,7 @@ def generate_options():
     return response, 200
 
 # ------------------------------------------------------------
-# SYSTEM PROMPT — BAE v5.0 (Full Hybrid)
+# SYSTEM PROMPT — EXACT TEXT
 # ------------------------------------------------------------
 SYSTEM_PROMPT = """
 You are an expert English Language Teaching (ELT) mentor and instructional designer
@@ -308,6 +308,7 @@ Extracted Lesson Content:
         # ---------------- CLEANUP ----------------
         lesson_text = re.sub(r"(?i)^.*summary of ai[- ]?generated guidance.*$", "", lesson_text, flags=re.MULTILINE)
         lesson_text = re.sub(r"\n{2,}", "\n", lesson_text).strip()
+
         # ---------------- DOCX GENERATION ----------------
         doc = Document()
         section = doc.sections[0]
@@ -331,28 +332,31 @@ Extracted Lesson Content:
         inside_section2 = False
 
         for line in lesson_text.split("\n"):
-    line = line.strip()
-    if not line:
-        continue
+            line = line.strip()
+            if not line:
+                continue
 
-    if "SECTION 2" in line.upper() and not inside_section2:
-        doc.add_page_break()
-        inside_section2 = True
+            # Page break when SECTION 2 starts
+            if "SECTION 2" in line.upper() and not inside_section2:
+                doc.add_page_break()
+                inside_section2 = True
+                continue
 
-    elif re.match(r"^section\s+\d+", line, re.I):
-        p = doc.add_paragraph(line.upper())
-        run = p.runs[0]
-        run.font.bold = True
-        run.font.size = Pt(14)
-        run.font.color.rgb = RGBColor(255, 255, 255)
-        shading = parse_xml(r'<w:shd {} w:fill="003366"/>'.format(nsdecls("w")))
-        p._p.get_or_add_pPr().append(shading)
-        p.alignment = 1
-        doc.add_paragraph()
-        continue
+            # Section headers
+            if re.match(r"^section\s+\d+", line, re.I):
+                p = doc.add_paragraph(line.upper())
+                run = p.runs[0]
+                run.font.bold = True
+                run.font.size = Pt(14)
+                run.font.color.rgb = RGBColor(255, 255, 255)
+                shading = parse_xml(r'<w:shd {} w:fill="003366"/>'.format(nsdecls("w")))
+                p._p.get_or_add_pPr().append(shading)
+                p.alignment = 1  # center
+                doc.add_paragraph()
+                continue
 
-
-            elif "|" in line:
+            # Table rows (pipe-separated)
+            if "|" in line:
                 cols = [c.strip() for c in line.split("|")]
                 if current_table is None:
                     current_table = doc.add_table(rows=1, cols=len(cols))
@@ -373,7 +377,8 @@ Extracted Lesson Content:
                         row.cells[i].text = text
                 continue
 
-            elif re.match(r"^\*\*(.+?)\*\*", line):
+            # Subheadings from **bold** markers
+            if re.match(r"^\*\*(.+?)\*\*", line):
                 heading_text = re.sub(r"\*\*", "", line).strip(": ")
                 p = doc.add_paragraph(heading_text)
                 p.runs[0].font.bold = True
@@ -381,7 +386,8 @@ Extracted Lesson Content:
                 p.paragraph_format.space_after = Pt(2)
                 continue
 
-            elif line.lower().startswith("domain name"):
+            # Domain blocks (Section 2)
+            if line.lower().startswith("domain name"):
                 current_table = doc.add_table(rows=3, cols=2)
                 current_table.style = "Table Grid"
                 for column in current_table.columns:
@@ -394,14 +400,14 @@ Extracted Lesson Content:
                 hdr[0]._tc.get_or_add_tcPr().append(parse_xml(r'<w:shd {} w:fill="D9D9D9"/>'.format(nsdecls("w"))))
                 continue
 
-            elif line.lower().startswith("rubric check"):
+            if line.lower().startswith("rubric check"):
                 row = current_table.rows[1]
                 row.cells[0].text = "Rubric Check"
                 row.cells[1].text = re.sub(r"^rubric check[:]*", "", line, flags=re.I).strip()
                 row.cells[0].paragraphs[0].runs[0].font.bold = True
                 continue
 
-            elif line.lower().startswith("ai mentor comment"):
+            if line.lower().startswith("ai mentor comment"):
                 row = current_table.rows[2]
                 row.cells[0].text = "AI Mentor Comment"
                 row.cells[1].text = re.sub(r"^ai mentor comment[:]*", "", line, flags=re.I).strip()
@@ -409,7 +415,8 @@ Extracted Lesson Content:
                 current_table = None
                 continue
 
-            elif any(k in line.lower() for k in [
+            # Normal headings
+            if any(k in line.lower() for k in [
                 "lesson information", "learning objectives", "lesson stages", "supporting details",
                 "differentiation", "assessment", "reflection & notes"
             ]):
@@ -421,17 +428,19 @@ Extracted Lesson Content:
                 p.paragraph_format.space_after = Pt(6)
                 continue
 
-            else:
-                p = doc.add_paragraph(line)
-                p.paragraph_format.line_spacing = 1.15
-                p.paragraph_format.space_after = Pt(4)
+            # Default paragraph
+            p = doc.add_paragraph(line)
+            p.paragraph_format.line_spacing = 1.15
+            p.paragraph_format.space_after = Pt(4)
 
+        # Footer
         footer = doc.sections[0].footer
         footer_para = footer.paragraphs[0]
         footer_para.text = "AI Lesson Planner — BAE StanEval Hybrid | © 2025 Kaled Alenezi"
         footer_para.alignment = 1
         footer_para.runs[0].font.size = Pt(8)
 
+        # Save and return
         output = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
         doc.save(output.name)
         output.seek(0)
@@ -443,19 +452,5 @@ Extracted Lesson Content:
 
 
 if __name__ == "__main__":
+    # If deploying on Railway/Gunicorn, this block is ignored (Gunicorn imports the app)
     app.run(host="0.0.0.0", port=5000)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
