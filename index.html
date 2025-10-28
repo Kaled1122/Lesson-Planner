@@ -221,7 +221,7 @@
       output.innerHTML = "<p>⏳ Generating your lesson plan, please wait...</p>";
 
       try {
-        const response = await fetch("https://lesson-planner-9gmh.onrender.com/generate", {
+        const response = await fetch("lesson-planner-production-624b.up.railway.app", {
           method: "POST",
           body: formData
         });
@@ -246,3 +246,4 @@
   </script>
 </body>
 </html>
+
