@@ -9,6 +9,7 @@ from docx.shared import Inches, Pt, Cm
 from docx.enum.section import WD_ORIENT
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
+from docx.shared import RGBColor
 from openpyxl import load_workbook
 from PIL import Image
 import pytesseract
@@ -442,6 +443,7 @@ Extracted Lesson Content:
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
 
