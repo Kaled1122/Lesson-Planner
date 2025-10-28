@@ -15,20 +15,18 @@ import pytesseract
 import tempfile
 from datetime import datetime
 
-# ------------------------------------------------------------
-# APP SETUP
-# ------------------------------------------------------------
+
 app = Flask(__name__)
 
-# ✅ Enable CORS for all routes and origins
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+# ✅ Enable CORS globally
+CORS(app, supports_credentials=True)
 
 @app.after_request
 def after_request(response):
-    # ✅ Explicitly allow CORS for browsers that ignore wildcard credentials
+    """Ensure every response includes proper CORS headers."""
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"]
     response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
 
@@ -36,20 +34,21 @@ def after_request(response):
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ------------------------------------------------------------
-# BASIC ROUTES (for CORS + health check)
+# BASIC ROUTES
 # ------------------------------------------------------------
 @app.route("/", methods=["GET"])
 def home():
-    return jsonify({"message": "Lesson Planner API is running."}), 200
+    return jsonify({"message": "Lesson Planner API is running"}), 200
 
+# ✅ Handle preflight (CORS) for /generate route
 @app.route("/generate", methods=["OPTIONS"])
-def handle_options():
+def generate_options():
+    """Handle CORS preflight for the /generate route."""
     response = jsonify({"ok": True})
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    return response
-
+    return response, 200
 
 # ------------------------------------------------------------
 # SYSTEM PROMPT — BAE v5.0 (Full Hybrid)
@@ -403,6 +402,7 @@ Extracted Lesson Content:
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
 
