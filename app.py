@@ -293,107 +293,105 @@ Extracted Lesson Content:
         lesson_text = re.sub(r"(?i)^.*summary of ai[- ]?generated guidance.*$", "", lesson_text, flags=re.MULTILINE)
         lesson_text = re.sub(r"\n{2,}", "\n", lesson_text).strip()
 
-        # ---------------- DOCX GENERATION ----------------
-        # ---------------- DOCX GENERATION (Structured + Styled) ----------------
-doc = Document()
-section = doc.sections[0]
-section.orientation = WD_ORIENT.LANDSCAPE
-section.page_width, section.page_height = section.page_height, section.page_width
-section.left_margin = Inches(0.7)
-section.right_margin = Inches(0.7)
-section.top_margin = Inches(0.6)
-section.bottom_margin = Inches(0.6)
+ # ---------------- FORMAT DOCX ----------------
+        doc = Document()
+        section = doc.sections[0]
+        section.orientation = WD_ORIENT.LANDSCAPE
+        section.page_width, section.page_height = section.page_height, section.page_width
+        section.left_margin = Inches(0.7)
+        section.right_margin = Inches(0.7)
+        section.top_margin = Inches(0.6)
+        section.bottom_margin = Inches(0.6)
 
-# Global font setup
-style = doc.styles["Normal"]
-style.font.name = "Calibri"
-style.font.size = Pt(11)
+        style = doc.styles["Normal"]
+        style.font.name = "Calibri"
+        style.font.size = Pt(11)
 
-# Add document header
-doc.add_heading("AI Lesson Plan — Observation Readiness Coach", level=0)
-doc.add_paragraph(f"Generated on: {timestamp}")
-doc.add_paragraph(f"Target Rating: {target_rating}")
-doc.add_paragraph("")
+        # HEADER
+        title = doc.add_heading("AI Lesson Plan — Observation Readiness Coach", level=0)
+        title.alignment = 1
+        title.runs[0].font.color.rgb = RGBColor(0, 51, 153)
+        title.runs[0].font.bold = True
+        doc.add_paragraph(f"Generated on: {timestamp}")
+        doc.add_paragraph(f"Target Rating: {target_rating}")
+        doc.add_paragraph("")
 
-# Process each line with formatting logic
-current_table = None
-for line in lesson_text.split("\n"):
-    line = line.strip()
-    if not line:
-        continue
+        # CONTENT
+        current_table = None
+        for line in lesson_text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
 
-    # ====== TABLE DETECTION ======
-    if "|" in line:
-        cols = [c.strip() for c in line.split("|")]
-        if current_table is None:
-            current_table = doc.add_table(rows=1, cols=len(cols))
-            current_table.style = "Table Grid"
+            # TABLE DETECTION
+            if "|" in line:
+                cols = [c.strip() for c in line.split("|")]
+                if current_table is None:
+                    current_table = doc.add_table(rows=1, cols=len(cols))
+                    current_table.style = "Table Grid"
+                    hdr_cells = current_table.rows[0].cells
+                    for i, text in enumerate(cols):
+                        hdr_cells[i].text = text
+                        for p in hdr_cells[i].paragraphs:
+                            run = p.runs[0] if p.runs else p.add_run()
+                            run.font.bold = True
+                            run.font.size = Pt(10)
+                            run.font.color.rgb = RGBColor(0, 51, 102)
+                    for cell in hdr_cells:
+                        shading = parse_xml(r'<w:shd {} w:fill="E6E6FA"/>'.format(nsdecls("w")))
+                        cell._tc.get_or_add_tcPr().append(shading)
+                else:
+                    row = current_table.add_row()
+                    for i, text in enumerate(cols):
+                        row.cells[i].text = text
+                continue
 
-            # Header row
-            hdr_cells = current_table.rows[0].cells
-            for i, text in enumerate(cols):
-                hdr_cells[i].text = text
-                for p in hdr_cells[i].paragraphs:
-                    run = p.runs[0] if p.runs else p.add_run()
-                    run.font.bold = True
-                    run.font.size = Pt(10)
-                    run.font.color.rgb = RGBColor(0, 51, 102)
-            # Shade header
-            for cell in hdr_cells:
-                shading = parse_xml(r'<w:shd {} w:fill="E6E6FA"/>'.format(nsdecls("w")))
-                cell._tc.get_or_add_tcPr().append(shading)
-        else:
-            row = current_table.add_row()
-            for i, text in enumerate(cols):
-                row.cells[i].text = text
-        continue
+            # PARAGRAPH LOGIC
+            current_table = None
+            p = doc.add_paragraph()
+            run = p.add_run(line)
 
-    # ====== HEADING / BODY LOGIC ======
-    current_table = None
-    p = doc.add_paragraph()
-    run = p.add_run(line)
+            if re.match(r"^section\s+\d+", line, re.I):
+                run.font.bold = True
+                run.font.size = Pt(14)
+                run.font.color.rgb = RGBColor(255, 255, 255)
+                shading = parse_xml(r'<w:shd {} w:fill="003399"/>'.format(nsdecls("w")))
+                p._p.get_or_add_pPr().append(shading)
+                p.alignment = 1
+            elif any(k in line.lower() for k in [
+                "lesson information", "learning objectives", "lesson stages", 
+                "supporting details", "domain name", "rubric check", "ai mentor comment"
+            ]):
+                run.font.bold = True
+                run.font.size = Pt(12)
+                run.font.color.rgb = RGBColor(0, 51, 153)
+                p.paragraph_format.space_before = Pt(8)
+                p.paragraph_format.space_after = Pt(6)
+            else:
+                run.font.size = Pt(11)
+                p.paragraph_format.line_spacing = 1.15
+                p.paragraph_format.space_after = Pt(4)
 
-    # Major section headers (e.g., SECTION 1, SECTION 2)
-    if re.match(r"^section\s+\d+", line, re.I):
-        run.font.bold = True
-        run.font.size = Pt(14)
-        run.font.color.rgb = RGBColor(255, 255, 255)
-        shading = parse_xml(r'<w:shd {} w:fill="003399"/>'.format(nsdecls("w")))
-        p._p.get_or_add_pPr().append(shading)
-        p.alignment = 1  # center
-
-    # Domain headings and major subtitles
-    elif any(k in line.lower() for k in ["lesson information", "learning objectives", "lesson stages", "supporting details", "domain name", "rubric check", "ai mentor comment"]):
-        run.font.bold = True
-        run.font.size = Pt(12)
-        run.font.color.rgb = RGBColor(0, 51, 153)
-        p.paragraph_format.space_before = Pt(8)
-        p.paragraph_format.space_after = Pt(6)
-
-    # Normal text
-    else:
-        run.font.size = Pt(11)
-        p.paragraph_format.line_spacing = 1.15
-        p.paragraph_format.space_after = Pt(4)
-   # Footer
-        footer = doc.sections[0].footer
+        # FOOTER
+        footer = section.footer
         footer_para = footer.paragraphs[0]
         footer_para.text = "AI Lesson Planner — BAE StanEval Hybrid | © 2025 Kaled Alenezi"
         footer_para.alignment = 1
         footer_para.runs[0].font.size = Pt(8)
         footer_para.runs[0].font.color.rgb = RGBColor(100, 100, 100)
 
-     # Save final document
-       output = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-       doc.save(output.name)
-       output.seek(0)
+        # SAVE
+        output = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+        doc.save(output.name)
+        output.seek(0)
 
-return send_file(output.name, as_attachment=True, download_name="BAE_Lesson_Plan.docx")
+        return send_file(output.name, as_attachment=True, download_name="BAE_Lesson_Plan.docx")
 
 
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
 
