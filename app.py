@@ -397,12 +397,17 @@ Extracted Lesson Content:
         output = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
         doc.save(output.name)
         output.seek(0)
-
+        
         return send_file(output.name, as_attachment=True, download_name="BAE_Lesson_Plan.docx")
+
+    except Exception as e:
+        print("❌ ERROR in /generate:", e)
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
 
