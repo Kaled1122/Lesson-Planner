@@ -335,21 +335,22 @@ Extracted Lesson Content:
     if not line:
         continue
 
-            if "SECTION 2" in line.upper() and not inside_section2:
-                doc.add_page_break()
-                inside_section2 = True
+    if "SECTION 2" in line.upper() and not inside_section2:
+        doc.add_page_break()
+        inside_section2 = True
 
-            elif re.match(r"^section\s+\d+", line, re.I):
-                p = doc.add_paragraph(line.upper())
-                run = p.runs[0]
-                run.font.bold = True
-                run.font.size = Pt(14)
-                run.font.color.rgb = RGBColor(255, 255, 255)
-                shading = parse_xml(r'<w:shd {} w:fill="003366"/>'.format(nsdecls("w")))
-                p._p.get_or_add_pPr().append(shading)
-                p.alignment = 1
-                doc.add_paragraph()
-                continue
+    elif re.match(r"^section\s+\d+", line, re.I):
+        p = doc.add_paragraph(line.upper())
+        run = p.runs[0]
+        run.font.bold = True
+        run.font.size = Pt(14)
+        run.font.color.rgb = RGBColor(255, 255, 255)
+        shading = parse_xml(r'<w:shd {} w:fill="003366"/>'.format(nsdecls("w")))
+        p._p.get_or_add_pPr().append(shading)
+        p.alignment = 1
+        doc.add_paragraph()
+        continue
+
 
             elif "|" in line:
                 cols = [c.strip() for c in line.split("|")]
@@ -443,6 +444,7 @@ Extracted Lesson Content:
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
 
