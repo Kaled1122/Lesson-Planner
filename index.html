@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AI Lesson Plan Generator — BAE StanEval Hybrid</title>
+  <title>AI Lesson Plan Generator - BAE StanEval Hybrid</title>
   <style>
     html, body {
       height: 100%;
@@ -221,7 +221,7 @@
       output.innerHTML = "<p>⏳ Generating your lesson plan, please wait...</p>";
 
       try {
-        const response = await fetch("lesson-planner-production-624b.up.railway.app", {
+        const response = await fetch("https://lesson-planner-production-624b.up.railway.app/generate", {
           method: "POST",
           body: formData
         });
@@ -246,4 +246,5 @@
   </script>
 </body>
 </html>
+
 
