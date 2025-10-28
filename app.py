@@ -35,6 +35,21 @@ def after_request(response):
 # ✅ Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# ------------------------------------------------------------
+# BASIC ROUTES (for CORS + health check)
+# ------------------------------------------------------------
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"message": "Lesson Planner API is running."}), 200
+
+@app.route("/generate", methods=["OPTIONS"])
+def handle_options():
+    response = jsonify({"ok": True})
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
+
 
 # ------------------------------------------------------------
 # SYSTEM PROMPT — BAE v5.0 (Full Hybrid)
@@ -388,6 +403,7 @@ Extracted Lesson Content:
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
 
