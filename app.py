@@ -307,148 +307,133 @@ Extracted Lesson Content:
         # ---------------- CLEANUP ----------------
         lesson_text = re.sub(r"(?i)^.*summary of ai[- ]?generated guidance.*$", "", lesson_text, flags=re.MULTILINE)
         lesson_text = re.sub(r"\n{2,}", "\n", lesson_text).strip()
-# ---------------- DOCX GENERATION (Structured + Styled) ----------------
-doc = Document()
-section = doc.sections[0]
-section.orientation = WD_ORIENT.LANDSCAPE
-section.page_width, section.page_height = section.page_height, section.page_width
-section.left_margin = Inches(0.7)
-section.right_margin = Inches(0.7)
-section.top_margin = Inches(0.6)
-section.bottom_margin = Inches(0.6)
+        # ---------------- DOCX GENERATION ----------------
+        doc = Document()
+        section = doc.sections[0]
+        section.orientation = WD_ORIENT.LANDSCAPE
+        section.page_width, section.page_height = section.page_height, section.page_width
+        section.left_margin = Inches(0.7)
+        section.right_margin = Inches(0.7)
+        section.top_margin = Inches(0.6)
+        section.bottom_margin = Inches(0.6)
 
-# Global font setup
-style = doc.styles["Normal"]
-style.font.name = "Calibri"
-style.font.size = Pt(11)
+        style = doc.styles["Normal"]
+        style.font.name = "Calibri"
+        style.font.size = Pt(11)
 
-# Add document header
-doc.add_heading("AI Lesson Plan — Observation Readiness Coach", level=0)
-doc.add_paragraph(f"Generated on: {timestamp}")
-doc.add_paragraph(f"Target Rating: {target_rating}")
-doc.add_paragraph("")
+        doc.add_heading("AI Lesson Plan — Observation Readiness Coach", level=0)
+        doc.add_paragraph(f"Generated on: {timestamp}")
+        doc.add_paragraph(f"Target Rating: {target_rating}")
+        doc.add_paragraph("")
 
-current_table = None
-inside_section2 = False
-
-for line in lesson_text.split("\n"):
-    line = line.strip()
-    if not line:
-        continue
-
-    # ===== PAGE BREAK BEFORE SECTION 2 =====
-    if "SECTION 2" in line.upper() and not inside_section2:
-        doc.add_page_break()
-        inside_section2 = True
-
-    # ===== SECTION HEADERS =====
-    if re.match(r"^section\s+\d+", line, re.I):
-        p = doc.add_paragraph(line.upper())
-        run = p.runs[0]
-        run.font.bold = True
-        run.font.size = Pt(14)
-        run.font.color.rgb = RGBColor(255, 255, 255)
-        shading = parse_xml(r'<w:shd {} w:fill="003366"/>'.format(nsdecls("w")))
-        p._p.get_or_add_pPr().append(shading)
-        p.alignment = 1  # center
-        doc.add_paragraph()
-        continue
-
-    # ===== TABLE LINES =====
-    if "|" in line:
-        cols = [c.strip() for c in line.split("|")]
-        if current_table is None:
-            current_table = doc.add_table(rows=1, cols=len(cols))
-            current_table.style = "Table Grid"
-
-            # Header row
-            hdr_cells = current_table.rows[0].cells
-            for i, text in enumerate(cols):
-                hdr_cells[i].text = text
-                for p in hdr_cells[i].paragraphs:
-                    run = p.runs[0] if p.runs else p.add_run()
-                    run.font.bold = True
-                    run.font.size = Pt(10)
-            for cell in hdr_cells:
-                shading = parse_xml(r'<w:shd {} w:fill="E6E6FA"/>'.format(nsdecls("w")))
-                cell._tc.get_or_add_tcPr().append(shading)
-        else:
-            row = current_table.add_row()
-            for i, text in enumerate(cols):
-                row.cells[i].text = text
-        continue
-
-    # ===== SUPPORTING DETAILS SUBHEADINGS =====
-    if re.match(r"^\*\*(.+?)\*\*", line):
-        heading_text = re.sub(r"\*\*", "", line).strip(": ")
-        p = doc.add_paragraph(heading_text)
-        p.style = "Normal"
-        p.runs[0].font.bold = True
-        p.paragraph_format.space_before = Pt(8)
-        p.paragraph_format.space_after = Pt(2)
-        continue
-
-    # ===== DOMAIN NAME BLOCKS (Section 2) =====
-    if line.lower().startswith("domain name"):
-        current_table = doc.add_table(rows=3, cols=2)
-        current_table.style = "Table Grid"
-        for column in current_table.columns:
-            for cell in column.cells:
-                cell.width = Inches(3.5)
-        hdr = current_table.rows[0].cells
-        hdr[0].text = "Domain Name"
-        hdr[1].text = re.sub(r"^domain name[:]*", "", line, flags=re.I).strip()
-        hdr[0].paragraphs[0].runs[0].font.bold = True
-        hdr[0]._tc.get_or_add_tcPr().append(parse_xml(r'<w:shd {} w:fill="D9D9D9"/>'.format(nsdecls("w"))))
-        continue
-
-    if line.lower().startswith("rubric check"):
-        row = current_table.rows[1]
-        row.cells[0].text = "Rubric Check"
-        row.cells[1].text = re.sub(r"^rubric check[:]*", "", line, flags=re.I).strip()
-        row.cells[0].paragraphs[0].runs[0].font.bold = True
-        continue
-
-    if line.lower().startswith("ai mentor comment"):
-        row = current_table.rows[2]
-        row.cells[0].text = "AI Mentor Comment"
-        row.cells[1].text = re.sub(r"^ai mentor comment[:]*", "", line, flags=re.I).strip()
-        row.cells[0].paragraphs[0].runs[0].font.bold = True
         current_table = None
-        continue
+        inside_section2 = False
 
-    # ===== NORMAL HEADINGS =====
-    if any(k in line.lower() for k in [
-        "lesson information", "learning objectives", "lesson stages", "supporting details",
-        "differentiation", "assessment", "reflection & notes"
-    ]):
-        p = doc.add_paragraph(line)
-        run = p.runs[0]
-        run.font.bold = True
-        run.font.size = Pt(12)
-        p.paragraph_format.space_before = Pt(8)
-        p.paragraph_format.space_after = Pt(6)
-        continue
+        for line in lesson_text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
 
-    # ===== DEFAULT TEXT =====
-    p = doc.add_paragraph(line)
-    p.paragraph_format.line_spacing = 1.15
-    p.paragraph_format.space_after = Pt(4)
+            if "SECTION 2" in line.upper() and not inside_section2:
+                doc.add_page_break()
+                inside_section2 = True
 
-# ===== Footer =====
-footer = doc.sections[0].footer
-footer_para = footer.paragraphs[0]
-footer_para.text = "AI Lesson Planner — BAE StanEval Hybrid | © 2025 Kaled Alenezi"
-footer_para.alignment = 1
-footer_para.runs[0].font.size = Pt(8)
+            elif re.match(r"^section\s+\d+", line, re.I):
+                p = doc.add_paragraph(line.upper())
+                run = p.runs[0]
+                run.font.bold = True
+                run.font.size = Pt(14)
+                run.font.color.rgb = RGBColor(255, 255, 255)
+                shading = parse_xml(r'<w:shd {} w:fill="003366"/>'.format(nsdecls("w")))
+                p._p.get_or_add_pPr().append(shading)
+                p.alignment = 1
+                doc.add_paragraph()
+                continue
 
-# ===== Save final document =====
-output = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-doc.save(output.name)
-output.seek(0)
+            elif "|" in line:
+                cols = [c.strip() for c in line.split("|")]
+                if current_table is None:
+                    current_table = doc.add_table(rows=1, cols=len(cols))
+                    current_table.style = "Table Grid"
+                    hdr_cells = current_table.rows[0].cells
+                    for i, text in enumerate(cols):
+                        hdr_cells[i].text = text
+                        for p in hdr_cells[i].paragraphs:
+                            run = p.runs[0] if p.runs else p.add_run()
+                            run.font.bold = True
+                            run.font.size = Pt(10)
+                    for cell in hdr_cells:
+                        shading = parse_xml(r'<w:shd {} w:fill="E6E6FA"/>'.format(nsdecls("w")))
+                        cell._tc.get_or_add_tcPr().append(shading)
+                else:
+                    row = current_table.add_row()
+                    for i, text in enumerate(cols):
+                        row.cells[i].text = text
+                continue
 
-return send_file(output.name, as_attachment=True, download_name="BAE_Lesson_Plan.docx")
+            elif re.match(r"^\*\*(.+?)\*\*", line):
+                heading_text = re.sub(r"\*\*", "", line).strip(": ")
+                p = doc.add_paragraph(heading_text)
+                p.runs[0].font.bold = True
+                p.paragraph_format.space_before = Pt(8)
+                p.paragraph_format.space_after = Pt(2)
+                continue
 
+            elif line.lower().startswith("domain name"):
+                current_table = doc.add_table(rows=3, cols=2)
+                current_table.style = "Table Grid"
+                for column in current_table.columns:
+                    for cell in column.cells:
+                        cell.width = Inches(3.5)
+                hdr = current_table.rows[0].cells
+                hdr[0].text = "Domain Name"
+                hdr[1].text = re.sub(r"^domain name[:]*", "", line, flags=re.I).strip()
+                hdr[0].paragraphs[0].runs[0].font.bold = True
+                hdr[0]._tc.get_or_add_tcPr().append(parse_xml(r'<w:shd {} w:fill="D9D9D9"/>'.format(nsdecls("w"))))
+                continue
+
+            elif line.lower().startswith("rubric check"):
+                row = current_table.rows[1]
+                row.cells[0].text = "Rubric Check"
+                row.cells[1].text = re.sub(r"^rubric check[:]*", "", line, flags=re.I).strip()
+                row.cells[0].paragraphs[0].runs[0].font.bold = True
+                continue
+
+            elif line.lower().startswith("ai mentor comment"):
+                row = current_table.rows[2]
+                row.cells[0].text = "AI Mentor Comment"
+                row.cells[1].text = re.sub(r"^ai mentor comment[:]*", "", line, flags=re.I).strip()
+                row.cells[0].paragraphs[0].runs[0].font.bold = True
+                current_table = None
+                continue
+
+            elif any(k in line.lower() for k in [
+                "lesson information", "learning objectives", "lesson stages", "supporting details",
+                "differentiation", "assessment", "reflection & notes"
+            ]):
+                p = doc.add_paragraph(line)
+                run = p.runs[0]
+                run.font.bold = True
+                run.font.size = Pt(12)
+                p.paragraph_format.space_before = Pt(8)
+                p.paragraph_format.space_after = Pt(6)
+                continue
+
+            else:
+                p = doc.add_paragraph(line)
+                p.paragraph_format.line_spacing = 1.15
+                p.paragraph_format.space_after = Pt(4)
+
+        footer = doc.sections[0].footer
+        footer_para = footer.paragraphs[0]
+        footer_para.text = "AI Lesson Planner — BAE StanEval Hybrid | © 2025 Kaled Alenezi"
+        footer_para.alignment = 1
+        footer_para.runs[0].font.size = Pt(8)
+
+        output = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+        doc.save(output.name)
+        output.seek(0)
+        return send_file(output.name, as_attachment=True, download_name="BAE_Lesson_Plan.docx")
 
     except Exception as e:
         print("❌ ERROR in /generate:", e)
@@ -457,6 +442,7 @@ return send_file(output.name, as_attachment=True, download_name="BAE_Lesson_Plan
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
 
