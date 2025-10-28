@@ -1,5 +1,6 @@
 import os
 import re
+import traceback
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from openai import OpenAI
@@ -53,7 +54,7 @@ def generate_options():
     return response, 200
 
 # ------------------------------------------------------------
-# SYSTEM PROMPT — EXACT TEXT
+# SYSTEM PROMPT — BAE v5.0 (Full Hybrid)
 # ------------------------------------------------------------
 SYSTEM_PROMPT = """
 You are an expert English Language Teaching (ELT) mentor and instructional designer
@@ -330,20 +331,28 @@ Extracted Lesson Content:
 
         current_table = None
         inside_section2 = False
+        current_table_cols = 0
 
         for line in lesson_text.split("\n"):
             line = line.strip()
             if not line:
                 continue
 
-            # Page break when SECTION 2 starts
+            # ===== PAGE BREAK BEFORE SECTION 2 =====
             if "SECTION 2" in line.upper() and not inside_section2:
+                # Close any open table
+                current_table = None
+                current_table_cols = 0
                 doc.add_page_break()
                 inside_section2 = True
                 continue
 
-            # Section headers
+            # ===== SECTION HEADERS =====
             if re.match(r"^section\s+\d+", line, re.I):
+                # Close any open table
+                current_table = None
+                current_table_cols = 0
+
                 p = doc.add_paragraph(line.upper())
                 run = p.runs[0]
                 run.font.bold = True
@@ -355,12 +364,16 @@ Extracted Lesson Content:
                 doc.add_paragraph()
                 continue
 
-            # Table rows (pipe-separated)
+            # ===== TABLE LINES =====
             if "|" in line:
                 cols = [c.strip() for c in line.split("|")]
+
                 if current_table is None:
                     current_table = doc.add_table(rows=1, cols=len(cols))
+                    current_table_cols = len(cols)
                     current_table.style = "Table Grid"
+
+                    # Header row
                     hdr_cells = current_table.rows[0].cells
                     for i, text in enumerate(cols):
                         hdr_cells[i].text = text
@@ -372,13 +385,23 @@ Extracted Lesson Content:
                         shading = parse_xml(r'<w:shd {} w:fill="E6E6FA"/>'.format(nsdecls("w")))
                         cell._tc.get_or_add_tcPr().append(shading)
                 else:
+                    # Normalize column count
+                    if len(cols) < current_table_cols:
+                        cols = cols + [""] * (current_table_cols - len(cols))
+                    elif len(cols) > current_table_cols:
+                        cols = cols[:current_table_cols]
+
                     row = current_table.add_row()
                     for i, text in enumerate(cols):
                         row.cells[i].text = text
                 continue
 
-            # Subheadings from **bold** markers
+            # ===== SUPPORTING DETAILS SUBHEADINGS =====
             if re.match(r"^\*\*(.+?)\*\*", line):
+                # Close any open table
+                current_table = None
+                current_table_cols = 0
+
                 heading_text = re.sub(r"\*\*", "", line).strip(": ")
                 p = doc.add_paragraph(heading_text)
                 p.runs[0].font.bold = True
@@ -386,9 +409,14 @@ Extracted Lesson Content:
                 p.paragraph_format.space_after = Pt(2)
                 continue
 
-            # Domain blocks (Section 2)
+            # ===== DOMAIN NAME BLOCKS (Section 2) =====
             if line.lower().startswith("domain name"):
+                # Close any open table
+                current_table = None
+                current_table_cols = 0
+
                 current_table = doc.add_table(rows=3, cols=2)
+                current_table_cols = 2
                 current_table.style = "Table Grid"
                 for column in current_table.columns:
                     for cell in column.cells:
@@ -412,14 +440,20 @@ Extracted Lesson Content:
                 row.cells[0].text = "AI Mentor Comment"
                 row.cells[1].text = re.sub(r"^ai mentor comment[:]*", "", line, flags=re.I).strip()
                 row.cells[0].paragraphs[0].runs[0].font.bold = True
+                # Close this small 3x2 block
                 current_table = None
+                current_table_cols = 0
                 continue
 
-            # Normal headings
+            # ===== NORMAL HEADINGS =====
             if any(k in line.lower() for k in [
                 "lesson information", "learning objectives", "lesson stages", "supporting details",
                 "differentiation", "assessment", "reflection & notes"
             ]):
+                # Close any open table
+                current_table = None
+                current_table_cols = 0
+
                 p = doc.add_paragraph(line)
                 run = p.runs[0]
                 run.font.bold = True
@@ -428,29 +462,31 @@ Extracted Lesson Content:
                 p.paragraph_format.space_after = Pt(6)
                 continue
 
-            # Default paragraph
+            # ===== DEFAULT TEXT =====
+            # Close any open table before plain text
+            current_table = None
+            current_table_cols = 0
+
             p = doc.add_paragraph(line)
             p.paragraph_format.line_spacing = 1.15
             p.paragraph_format.space_after = Pt(4)
 
-        # Footer
         footer = doc.sections[0].footer
         footer_para = footer.paragraphs[0]
         footer_para.text = "AI Lesson Planner — BAE StanEval Hybrid | © 2025 Kaled Alenezi"
         footer_para.alignment = 1
         footer_para.runs[0].font.size = Pt(8)
 
-        # Save and return
         output = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-        doc.save(output.name)
+ the content  doc.save(output.name)
         output.seek(0)
         return send_file(output.name, as_attachment=True, download_name="BAE_Lesson_Plan.docx")
 
     except Exception as e:
         print("❌ ERROR in /generate:", e)
+        print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
-    # If deploying on Railway/Gunicorn, this block is ignored (Gunicorn imports the app)
     app.run(host="0.0.0.0", port=5000)
